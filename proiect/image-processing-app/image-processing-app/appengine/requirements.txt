@@ -1,0 +1,7 @@
+Flask
+google-cloud-firestore
+google-cloud-storage
+google-auth
+gunicorn
+pandas>=1.2.3
+openai==0.28.0

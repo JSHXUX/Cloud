@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Gallery</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background: #ffffff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 2.5em;
+            color: #007bff;
+            text-align: center;
+            margin: 0 auto;
+        }
+
+        h1::before {
+            content: "🎨 ";
+        }
+
+        h1::after {
+            content: " 🖼️";
+        }
+
+        .gallery-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            padding: 40px 80px;
+            justify-content: center;
+        }
+
+        .image-card {
+            background: #fff;
+            padding: 15px;
+            position: relative;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            width: 70%;
+            margin: 0 auto;
+        }
+
+        .image-card img {
+            width: 100%;
+            max-width: 300px;
+            height: auto;
+            border-radius: 10px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .delete-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        .standard-button {
+            padding: 8px 16px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .standard-button:hover {
+            background-color: #0056b3;
+        }
+
+        .warning {
+            color: red;
+        }
+
+        form {
+            display: inline;
+        }
+
+        body.dark-mode {
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+
+        body.dark-mode header {
+            background: #1e1e1e;
+            box-shadow: 0 2px 5px rgba(255, 255, 255, 0.05);
+        }
+
+        body.dark-mode .image-card {
+            background: #1e1e1e;
+            box-shadow: 0 1px 3px rgba(255, 255, 255, 0.05);
+        }
+
+        body.dark-mode .standard-button {
+            background-color: #4a90e2;
+        }
+
+        body.dark-mode .standard-button:hover {
+            background-color: #357ABD;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div style="display: flex; gap: 10px;">
+            <a href="/chat_ui">
+                <button class="standard-button">💬 Chat</button>
+            </a>
+            <button id="toggleTheme" class="standard-button">🌙 Dark</button>
+        </div>        
+
+        <h1>Gallery</h1>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+            <input type="file" name="image" accept="image/*" required>
+            <button type="submit" class="standard-button">⬆️ Upload</button>
+        </form>
+    </header>
+
+    <div class="gallery-container" id="image-list"></div>
+
+    <script>
+        function getLikelihoodScore(likelihood) {
+            if (typeof likelihood === 'number') return likelihood;
+            const levels = {
+                'UNKNOWN': 0, 'VERY_UNLIKELY': 1, 'UNLIKELY': 2,
+                'POSSIBLE': 3, 'LIKELY': 4, 'VERY_LIKELY': 5
+            };
+            return levels[likelihood] ?? 0;
+        }
+
+        fetch('/images')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('image-list');
+            data.forEach(img => {
+                fetch(`/generate_signed_url/${img.name}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const signedUrl = data.url;
+                        const adultScore = getLikelihoodScore(img.safeSearch.adult);
+                        const violenceScore = getLikelihoodScore(img.safeSearch.violence);
+                        const racyScore = getLikelihoodScore(img.safeSearch.racy);
+                        const isSafe = adultScore < 5 && violenceScore < 5 && racyScore < 5;
+
+                        const div = document.createElement('div');
+                        div.className = 'image-card';
+
+                        div.innerHTML = `
+                            <button class="standard-button delete-button" onclick="deleteImage('${img.name}', this)">❌</button>
+                            <p><strong>${img.name}</strong></p>
+                            <p>Labels: ${img.labels.join(', ')}</p>
+                            <p>Adult: ${img.safeSearch.adult}, Violence: ${img.safeSearch.violence}, Racy: ${img.safeSearch.racy}</p>
+                            ${isSafe ? `<img src="${signedUrl}" alt="${img.name}">` 
+                                     : `<p class="warning">⚠️ Image not shown due to content restrictions</p>`}
+                        `;
+                        container.appendChild(div);
+                    });
+            });
+        });
+
+        function deleteImage(imageName, button) {
+            fetch(`/delete_image/${imageName}`, {
+                method: 'DELETE'
+            }).then(res => {
+                if (res.ok) {
+                    const card = button.closest('.image-card');
+                    card.remove();
+                } else {
+                    alert('Failed to delete image');
+                }
+            });
+        }
+
+        document.getElementById('uploadForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            const response = await fetch('/upload_images', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                alert('Upload failed.');
+            }
+        });
+    </script>
+    <script>
+        const toggleBtn = document.getElementById('toggleTheme');
+        const currentTheme = localStorage.getItem('theme');
+    
+        if (currentTheme === 'dark') {
+            document.body.classList.add('dark-mode');
+            toggleBtn.textContent = '☀️ Light';
+        }
+    
+        toggleBtn.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            toggleBtn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        });
+    </script>    
+</body>
+</html>
