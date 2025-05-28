@@ -67,6 +67,15 @@ def upload_images():
     blob = bucket.blob(file.filename)
     blob.upload_from_file(file)
 
+    updated_docs = []
+    docs = db.collection('images').stream()
+    for doc in docs:
+        data = doc.to_dict()
+        labels = data.get('labels', [])
+        labels_lower = [label.lower() for label in labels if isinstance(label, str)]
+        doc.reference.update({'labels_lower': labels_lower})
+        updated_docs.append(doc.id)
+
     return jsonify({'success': True})
 
 

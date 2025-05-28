@@ -217,6 +217,19 @@
             toggleBtn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
             localStorage.setItem('theme', isDark ? 'dark' : 'light');
         });
-    </script>    
+    </script>
+    <script>
+        setInterval(() => {
+            fetch('/update-labels-lower')
+                .then(response => {
+                    if (!response.ok) {
+                        console.error('Failed to update labels_lower');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error updating labels_lower:', error);
+                });
+        }, 5000); // 5000 ms = 5 secunde
+    </script>
 </body>
 </html>
