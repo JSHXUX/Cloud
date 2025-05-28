@@ -33,6 +33,14 @@ def get_images():
     data = [doc.to_dict() for doc in docs]
     return jsonify(data)
 
+@app.route('/debug')
+def debug_documents():
+    docs = db.collection('images').stream()
+    output = []
+    for doc in docs:
+        data = doc.to_dict()
+        output.append(data)
+    return jsonify(output)
 
 @app.route('/generate_signed_url/<image_name>')
 def generate_signed_url(image_name):
@@ -77,6 +85,27 @@ def delete_image(image_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def search_images_by_labels(labels):
+    labels_lower = [label.lower() for label in labels]
+    
+    # 1. Căutare după PRIMA etichetă
+    initial_query = db.collection('images').where('labels_lower', 'array_contains', labels_lower[0])
+    docs = list(initial_query.stream())
+
+    # 2. Filtrare locală pentru toate etichetele
+    matching_docs = []
+    for doc in docs:
+        data = doc.to_dict()
+        doc_labels = [label.lower() for label in data.get('labels_lower', [])]
+        if all(label in doc_labels for label in labels_lower):
+            matching_docs.append(doc)
+
+    # 3. Dacă nu am găsit nimic, fac fallback pe OR logic
+    if not matching_docs:
+        fallback_query = db.collection('images').where('labels_lower', 'array_contains_any', labels_lower)
+        matching_docs = list(fallback_query.stream())
+
+    return matching_docs
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -101,15 +130,22 @@ def chat():
         keywords = ['image', 'photo', 'picture', 'imagine', 'foto', 'photos', 'fotos', 'images', 'pictures', 'fotography', 'fotografie']
         if any(kw in user_message_en.lower() for kw in keywords):
             # Extrage etichete pentru căutarea imaginilor
+        
             prompt_for_labels = (
-                "Extract only the main search labels as a JSON list from the following text, "
-                "if it contains references to images, photos, or pictures. "
-                "If no such references exist, return an empty list.\n\n"
-                "Examples:\n"
-                "Text: \"Show me photos of cats and dogs\"\nLabels: [\"cats\", \"dogs\"]\n\n"
-                "Text: \"Tell me a story\"\nLabels: []\n\n"
-                "Text: \"I want an image of a mountain and lake\"\nLabels: [\"mountain\", \"lake\"]\n\n"
-                f"Text: \"{user_message_en}\"\nLabels:"
+            "You are an assistant that extracts main visual search labels from a sentence, ONLY if it refers to images, photos, or visual content.\n\n"
+            "Your job is to:\n"
+            "- Extract only the most important *key* nouns (no verbs, no general concepts).\n"
+            "- Convert plural nouns to their singular form (e.g., 'cars' → 'car', 'dogs' → 'dog').\n"
+            "- Return the result as a JSON list of lowercase singular strings, no extra text.\n"
+            "- If there are no references to visual content, return an empty list.\n\n"
+            "Examples:\n"
+            "Text: \"Show me photos of cats and dogs\"\nOutput: [\"cat\", \"dog\"]\n\n"
+            "Text: \"I want a picture of red cars and a tree\"\nOutput: [\"car\", \"tree\"]\n\n"
+            "Text: \"I want images with an anime girl wearing a dress\"\nOutput: [\"anime girl\", \"dress\"]\n\n"
+            "Text: \"I want a photography with a deer\"\nOutput: [\"deer\"]\n\n"
+            "Text: \"Tell me a story about friendship\"\nOutput: []\n\n"
+            "Text: \"I want to see all blue images.\"\nOutput: [\"blue\"]\n\n"
+            f"Text: \"{user_message_en}\"\nOutput:"
             )
 
             label_response = openai.ChatCompletion.create(
@@ -178,6 +214,20 @@ def chat():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/update-labels-lower')
+def update_labels_lower_all():
+    try:
+        updated_docs = []
+        docs = db.collection('images').stream()
+        for doc in docs:
+            data = doc.to_dict()
+            labels = data.get('labels', [])
+            labels_lower = [label.lower() for label in labels if isinstance(label, str)]
+            doc.reference.update({'labels_lower': labels_lower})
+            updated_docs.append(doc.id)
+        return jsonify({"updated_docs": updated_docs})
+    except Exception as e:
+        return f"Error: {e}", 500
 
 @app.route('/')
 def index():
